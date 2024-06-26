@@ -1,3 +1,7 @@
+mod buffer;
+mod editor;
 mod text;
 
-fn main() {}
+fn main() {
+    let _editor = editor::Editor::default();
+}

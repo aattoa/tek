@@ -24,6 +24,7 @@ struct PiecePosition {
     relative_offset: usize,
 }
 
+#[derive(Default)]
 pub struct PieceTable {
     original: String,
     append: String,
