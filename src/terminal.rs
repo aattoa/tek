@@ -1,7 +1,7 @@
 use crossterm::{cursor, terminal};
 use std::io;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Position {
     pub x: u16,
     pub y: u16,
@@ -36,6 +36,7 @@ pub fn end() -> io::Result<()> {
     terminal::disable_raw_mode()?;
     queue(terminal::LeaveAlternateScreen)?;
     queue(terminal::EnableLineWrap)?;
+    queue(cursor::Show)?;
     Ok(())
 }
 
@@ -47,19 +48,24 @@ pub fn clear_line() -> io::Result<()> {
     queue(terminal::Clear(terminal::ClearType::CurrentLine))
 }
 
-pub fn move_cursor(Position { x, y }: Position) -> io::Result<()> {
+pub fn set_cursor(Position { x, y }: Position) -> io::Result<()> {
     queue(cursor::MoveTo(x, y))
 }
 
-pub fn reset_cursor() -> io::Result<()> {
-    move_cursor(Position { x: 0, y: 0 })
-}
-
-pub fn show_cursor(show: bool) -> io::Result<()> {
-    if show {
-        queue(cursor::Show)
+impl Position {
+    pub fn up(self) -> Position {
+        Position { y: self.y.saturating_sub(1), ..self }
     }
-    else {
-        queue(cursor::Hide)
+    pub fn down(self) -> Position {
+        Position { y: self.y.saturating_add(1), ..self }
+    }
+    pub fn left(self) -> Position {
+        Position { x: self.x.saturating_sub(1), ..self }
+    }
+    pub fn right(self) -> Position {
+        Position { x: self.x.saturating_add(1), ..self }
+    }
+    pub fn offset(self, other: Position) -> Position {
+        Position { x: self.x + other.x, y: self.y + other.y }
     }
 }
