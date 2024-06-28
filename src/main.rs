@@ -1,5 +1,6 @@
 mod buffer;
 mod editor;
+mod indexvec;
 mod terminal;
 mod text;
 mod ui;
