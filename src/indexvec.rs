@@ -9,7 +9,7 @@ pub struct IndexVec<T, Index: VecIndex> {
     marker: std::marker::PhantomData<Index>,
 }
 
-// This impl can not be derived because of the phantom data marker.
+// This impl can not be derived.
 impl<T, Index: VecIndex> Default for IndexVec<T, Index> {
     fn default() -> Self {
         Self { underlying: Default::default(), marker: Default::default() }
@@ -34,6 +34,15 @@ impl<T, Index: VecIndex> IndexVec<T, Index> {
         self.underlying.push(element);
         Index::new(self.underlying.len() - 1)
     }
+    pub fn get(&self, index: Index) -> Option<&T> {
+        self.underlying.get(index.get())
+    }
+    pub fn get_mut(&mut self, index: Index) -> Option<&mut T> {
+        self.underlying.get_mut(index.get())
+    }
+    pub fn len(&self) -> usize {
+        self.underlying.len()
+    }
 }
 
 #[macro_export]
@@ -54,7 +63,7 @@ mod tests {
 
     #[test]
     fn index_vec() {
-        let mut vec: super::IndexVec<String, MyIndex> = Default::default();
+        let mut vec = super::IndexVec::<String, MyIndex>::default();
         let id: MyIndex = vec.push(String::from("hello"));
         assert_eq!(vec[id], String::from("hello"));
     }

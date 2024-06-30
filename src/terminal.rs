@@ -1,3 +1,4 @@
+use crate::util::Direction;
 use crossterm::{cursor, terminal};
 use std::io;
 
@@ -53,18 +54,15 @@ pub fn set_cursor(Position { x, y }: Position) -> io::Result<()> {
 }
 
 impl Position {
-    pub fn up(self) -> Position {
-        Position { y: self.y.saturating_sub(1), ..self }
+    pub fn move_toward(self, direction: Direction) -> Position {
+        match direction {
+            Direction::Up => Position { y: self.y.saturating_sub(1), ..self },
+            Direction::Down => Position { y: self.y.saturating_add(1), ..self },
+            Direction::Left => Position { x: self.x.saturating_sub(1), ..self },
+            Direction::Right => Position { x: self.x.saturating_add(1), ..self },
+        }
     }
-    pub fn down(self) -> Position {
-        Position { y: self.y.saturating_add(1), ..self }
-    }
-    pub fn left(self) -> Position {
-        Position { x: self.x.saturating_sub(1), ..self }
-    }
-    pub fn right(self) -> Position {
-        Position { x: self.x.saturating_add(1), ..self }
-    }
+
     pub fn offset(self, other: Position) -> Position {
         Position { x: self.x + other.x, y: self.y + other.y }
     }

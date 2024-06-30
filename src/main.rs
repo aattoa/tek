@@ -3,6 +3,7 @@ mod indexvec;
 mod terminal;
 mod text;
 mod ui;
+mod util;
 
 fn main() -> std::io::Result<()> {
     terminal::begin()?;

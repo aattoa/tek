@@ -1,6 +1,7 @@
 use crate::editor;
 use crate::terminal::{self, Position};
-use crossterm::event::{self, Event};
+use crate::util::Direction;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::{cursor, style};
 use std::io;
 
@@ -78,33 +79,47 @@ fn draw(ui: &UI) -> io::Result<()> {
     Ok(())
 }
 
-fn handle_key(ui: &mut UI, key: event::KeyEvent) -> io::Result<()> {
-    if key.kind != event::KeyEventKind::Press {
+fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
+    if key.kind != KeyEventKind::Press {
         return Ok(());
     }
 
     match ui.editor.mode {
         editor::Mode::Normal => match key.code {
-            event::KeyCode::Char('c') if key.modifiers == event::KeyModifiers::CONTROL => {
+            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
                 ui.quit = true;
             }
-            event::KeyCode::Char(character) => match character {
+            KeyCode::Char('w') if key.modifiers == KeyModifiers::CONTROL => {
+                ui.editor.mode = editor::Mode::Window;
+            }
+            KeyCode::Char(character) => match character {
                 'f' => {
                     let window = ui.create_window();
                     ui.editor.edit("test.txt".into(), window)?;
                 }
+                'h' => ui.editor.move_cursor(Direction::Left),
+                'j' => ui.editor.move_cursor(Direction::Down),
+                'k' => ui.editor.move_cursor(Direction::Up),
+                'l' => ui.editor.move_cursor(Direction::Right),
                 'i' => ui.editor.mode = editor::Mode::Insert,
-                'h' => ui.editor.update_cursor(Position::left),
-                'j' => ui.editor.update_cursor(Position::down),
-                'k' => ui.editor.update_cursor(Position::up),
-                'l' => ui.editor.update_cursor(Position::right),
+                _ => {}
+            },
+            _ => {}
+        },
+        editor::Mode::Window => match key.code {
+            KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
+            KeyCode::Char(character) => match character {
+                's' => ui.editor.horizontal_split_window(),
+                'v' => ui.editor.vertical_split_window(),
+                'w' => ui.editor.rotate_focus_forward(),
+                'W' => ui.editor.rotate_focus_backward(),
                 _ => {}
             },
             _ => {}
         },
         editor::Mode::Insert => match key.code {
-            event::KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
-            event::KeyCode::Char(character) => ui.status = Some(format!("got '{character}'")),
+            KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
+            KeyCode::Char(character) => ui.status = Some(format!("got '{character}'")),
             _ => {}
         },
         _ => {}
@@ -146,8 +161,8 @@ impl UI {
 
     pub fn create_window(&mut self) -> editor::WindowID {
         self.editor.windows.push(editor::Window {
-            position: Position::default(),
-            cursor: Position::default(),
+            position: Default::default(),
+            cursor: Default::default(),
             size: self.size,
             view: None,
         })
