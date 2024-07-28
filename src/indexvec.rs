@@ -48,7 +48,7 @@ impl<T, Index: VecIndex> IndexVec<T, Index> {
 #[macro_export]
 macro_rules! define_index {
     ($visibility:vis $name:ident) => {
-        #[derive(Clone, Copy, Default, Debug)]
+        #[derive(Clone, Copy, PartialEq, Default, Debug)]
         $visibility struct $name(usize);
         impl $crate::indexvec::VecIndex for $name {
             fn get(self) -> usize { self.0 }
@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn index_vec() {
         let mut vec = super::IndexVec::<String, MyIndex>::default();
-        let id: MyIndex = vec.push(String::from("hello"));
-        assert_eq!(vec[id], String::from("hello"));
+        let id: MyIndex = vec.push("hello".to_owned());
+        assert_eq!(vec[id], "hello".to_owned());
     }
 }

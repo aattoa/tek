@@ -7,13 +7,12 @@ use std::io;
 
 pub struct UI {
     editor: editor::Editor,
-    size: terminal::Size,
     status: Option<String>,
     quit: bool,
 }
 
 fn draw_status_line(ui: &UI) -> io::Result<()> {
-    terminal::set_cursor(Position { x: 0, y: ui.size.height })?;
+    terminal::set_cursor(Position { x: 0, y: ui.editor.size.height })?;
     terminal::queue(style::SetBackgroundColor(style::Color::DarkGrey))?;
     terminal::clear_line()?;
 
@@ -31,7 +30,7 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
 
 fn line_view(line: &str, view: editor::View) -> &str {
     let from = view.offset as usize;
-    let to = from + view.width as usize;
+    let to = from + view.size.width as usize;
     line.get(from..to).unwrap_or(line)
 }
 
@@ -113,6 +112,10 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
                 'v' => ui.editor.vertical_split_window(),
                 'w' => ui.editor.rotate_focus_forward(),
                 'W' => ui.editor.rotate_focus_backward(),
+                'h' => ui.editor.move_focus(Direction::Left),
+                'j' => ui.editor.move_focus(Direction::Down),
+                'k' => ui.editor.move_focus(Direction::Up),
+                'l' => ui.editor.move_focus(Direction::Right),
                 _ => {}
             },
             _ => {}
@@ -134,7 +137,7 @@ fn handle_event(ui: &mut UI, event: Event) -> io::Result<()> {
             handle_key(ui, event)?;
         }
         Event::Resize(width, height) => {
-            ui.size = terminal::Size { width, height };
+            ui.editor.size = terminal::Size { width, height };
         }
         _ => {}
     }
@@ -144,8 +147,13 @@ fn handle_event(ui: &mut UI, event: Event) -> io::Result<()> {
 impl UI {
     pub fn new(size: terminal::Size) -> UI {
         UI {
-            editor: editor::Editor::default(),
-            size,
+            editor: editor::Editor {
+                buffers: Default::default(),
+                windows: Default::default(),
+                focus: Default::default(),
+                mode: Default::default(),
+                size,
+            },
             status: None,
             quit: false,
         }
@@ -163,7 +171,7 @@ impl UI {
         self.editor.windows.push(editor::Window {
             position: Default::default(),
             cursor: Default::default(),
-            size: self.size,
+            size: self.editor.size,
             view: None,
         })
     }
