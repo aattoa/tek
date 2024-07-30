@@ -20,9 +20,8 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
     if let Some(string) = &ui.status {
         print!(" {string}");
     }
-    if let Some(cursor) = ui.editor.focus.map(|focus| ui.editor.windows[focus].cursor) {
-        print!(" {},{}", cursor.x + 1, cursor.y + 1);
-    }
+    let cursor = ui.editor.windows[ui.editor.focus].cursor;
+    print!(" {},{}", cursor.x + 1, cursor.y + 1);
 
     terminal::queue(style::SetBackgroundColor(style::Color::Reset))?;
     Ok(())
@@ -61,11 +60,9 @@ fn draw_windows(ui: &UI) -> io::Result<()> {
 }
 
 fn draw_cursor(ui: &UI) -> io::Result<()> {
-    if let Some(window) = ui.editor.focus {
-        let window = &ui.editor.windows[window];
-        terminal::set_cursor(window.position.offset(window.cursor))?;
-        terminal::queue(cursor::Show)?;
-    }
+    let window = &ui.editor.windows[ui.editor.focus];
+    terminal::set_cursor(window.position.offset(window.cursor))?;
+    terminal::queue(cursor::Show)?;
     Ok(())
 }
 
@@ -92,15 +89,12 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
                 ui.editor.mode = editor::Mode::Window;
             }
             KeyCode::Char(character) => match character {
-                'f' => {
-                    let window = ui.create_window();
-                    ui.editor.edit("test.txt".into(), window)?;
-                }
                 'h' => ui.editor.move_cursor(Direction::Left),
                 'j' => ui.editor.move_cursor(Direction::Down),
                 'k' => ui.editor.move_cursor(Direction::Up),
                 'l' => ui.editor.move_cursor(Direction::Right),
                 'i' => ui.editor.mode = editor::Mode::Insert,
+                'f' => ui.editor.edit("test.txt".into())?,
                 _ => {}
             },
             _ => {}
@@ -108,14 +102,14 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
         editor::Mode::Window => match key.code {
             KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
             KeyCode::Char(character) => match character {
-                's' => ui.editor.horizontal_split_window(),
-                'v' => ui.editor.vertical_split_window(),
-                'w' => ui.editor.rotate_focus_forward(),
-                'W' => ui.editor.rotate_focus_backward(),
                 'h' => ui.editor.move_focus(Direction::Left),
                 'j' => ui.editor.move_focus(Direction::Down),
                 'k' => ui.editor.move_focus(Direction::Up),
                 'l' => ui.editor.move_focus(Direction::Right),
+                's' => ui.editor.horizontal_split_window(),
+                'v' => ui.editor.vertical_split_window(),
+                'w' => ui.editor.rotate_focus_forward(),
+                'W' => ui.editor.rotate_focus_backward(),
                 _ => {}
             },
             _ => {}
@@ -146,17 +140,7 @@ fn handle_event(ui: &mut UI, event: Event) -> io::Result<()> {
 
 impl UI {
     pub fn new(size: terminal::Size) -> UI {
-        UI {
-            editor: editor::Editor {
-                buffers: Default::default(),
-                windows: Default::default(),
-                focus: Default::default(),
-                mode: Default::default(),
-                size,
-            },
-            status: None,
-            quit: false,
-        }
+        UI { editor: editor::Editor::new(size), status: None, quit: false }
     }
 
     pub fn run(&mut self) -> io::Result<()> {
@@ -165,14 +149,5 @@ impl UI {
             handle_event(self, event::read()?)?;
         }
         Ok(())
-    }
-
-    pub fn create_window(&mut self) -> editor::WindowID {
-        self.editor.windows.push(editor::Window {
-            position: Default::default(),
-            cursor: Default::default(),
-            size: self.editor.size,
-            view: None,
-        })
     }
 }

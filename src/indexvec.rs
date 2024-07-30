@@ -12,7 +12,7 @@ pub struct IndexVec<T, Index: VecIndex> {
 // This impl can not be derived.
 impl<T, Index: VecIndex> Default for IndexVec<T, Index> {
     fn default() -> Self {
-        Self { underlying: Default::default(), marker: Default::default() }
+        IndexVec::new()
     }
 }
 
@@ -30,6 +30,9 @@ impl<T, Index: VecIndex> std::ops::IndexMut<Index> for IndexVec<T, Index> {
 }
 
 impl<T, Index: VecIndex> IndexVec<T, Index> {
+    pub fn new() -> IndexVec<T, Index> {
+        IndexVec { underlying: Vec::new(), marker: std::marker::PhantomData }
+    }
     pub fn push(&mut self, element: T) -> Index {
         self.underlying.push(element);
         Index::new(self.underlying.len() - 1)
@@ -48,7 +51,7 @@ impl<T, Index: VecIndex> IndexVec<T, Index> {
 #[macro_export]
 macro_rules! define_index {
     ($visibility:vis $name:ident) => {
-        #[derive(Clone, Copy, PartialEq, Default, Debug)]
+        #[derive(Clone, Copy, PartialEq, Debug)]
         $visibility struct $name(usize);
         impl $crate::indexvec::VecIndex for $name {
             fn get(self) -> usize { self.0 }

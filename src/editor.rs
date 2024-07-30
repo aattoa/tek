@@ -12,6 +12,9 @@ use std::time::SystemTime;
 define_index!(pub BufferID);
 define_index!(pub WindowID);
 
+pub type BufferVec = IndexVec<Buffer, BufferID>;
+pub type WindowVec = IndexVec<Window, WindowID>;
+
 #[derive(Clone, Copy, Default, Debug)]
 pub enum Mode {
     #[default]
@@ -48,9 +51,9 @@ pub struct Window {
 }
 
 pub struct Editor {
-    pub buffers: IndexVec<Buffer, BufferID>,
-    pub windows: IndexVec<Window, WindowID>,
-    pub focus: Option<WindowID>,
+    pub buffers: BufferVec,
+    pub windows: WindowVec,
+    pub focus: WindowID,
     pub mode: Mode,
     pub size: Size,
 }
@@ -90,104 +93,108 @@ impl Window {
 }
 
 impl Editor {
+    pub fn new(size: Size) -> Editor {
+        let mut windows = WindowVec::new();
+
+        let default_window = windows.push(Window {
+            position: Position::default(),
+            cursor: Position::default(),
+            size,
+            view: None,
+        });
+
+        Editor {
+            buffers: BufferVec::new(),
+            windows,
+            focus: default_window,
+            mode: Mode::Normal,
+            size,
+        }
+    }
+
     fn window_ids(&self) -> impl Iterator<Item = WindowID> {
         (0..self.windows.len()).map(crate::indexvec::VecIndex::new)
     }
 
     // TODO: check if already open
-    pub fn edit(&mut self, path: PathBuf, window_id: WindowID) -> io::Result<()> {
+    pub fn edit(&mut self, path: PathBuf) -> io::Result<()> {
         let buffer = self.buffers.push(Buffer::read(path)?);
-        let window = &mut self.windows[window_id];
+        let window = &mut self.windows[self.focus];
         window.cursor = Position::default();
         window.view = Some(View { offset: window.position.x, size: window.size, buffer });
-        self.focus = Some(window_id);
         Ok(())
     }
 
     pub fn move_cursor(&mut self, direction: Direction) {
-        if let Some(focus) = self.focus {
-            let window = &mut self.windows[focus];
-            window.cursor = window.cursor.move_toward(direction);
-            window.keep_cursor_within_bounds();
-        }
+        let window = &mut self.windows[self.focus];
+        window.cursor = window.cursor.move_toward(direction);
+        window.keep_cursor_within_bounds();
     }
 
     pub fn rotate_focus_forward(&mut self) {
-        if let Some(focus) = self.focus {
-            let index = 1 + crate::indexvec::VecIndex::get(focus);
-            let index = if index == self.windows.len() { 0 } else { index };
-            self.focus = Some(crate::indexvec::VecIndex::new(index));
-        }
+        let index = 1 + crate::indexvec::VecIndex::get(self.focus);
+        let index = if index == self.windows.len() { 0 } else { index };
+        self.focus = crate::indexvec::VecIndex::new(index);
     }
 
     pub fn rotate_focus_backward(&mut self) {
-        if let Some(focus) = self.focus {
-            let index = crate::indexvec::VecIndex::get(focus);
-            let index = if index == 0 { self.windows.len() } else { index };
-            self.focus = Some(crate::indexvec::VecIndex::new(index - 1));
-        }
+        let index = crate::indexvec::VecIndex::get(self.focus);
+        let index = if index == 0 { self.windows.len() } else { index };
+        self.focus = crate::indexvec::VecIndex::new(index - 1);
     }
 
     fn cursor_focus_beam(&self, beam: impl Iterator<Item = Position>) -> Option<WindowID> {
-        self.focus.and_then(|focus| {
-            beam.flat_map(|position| {
-                self.window_ids()
-                    .filter(move |&id| id != focus && self.windows[id].contains(position))
+        beam.flat_map(|position| {
+            self.window_ids().filter(move |&window_id| {
+                window_id != self.focus && self.windows[window_id].contains(position)
             })
-            .next()
         })
+        .next()
     }
 
     pub fn move_focus(&mut self, direction: Direction) {
-        if let Some(focus) = self.focus {
-            let size = self.windows[focus].size;
-            let position = self.windows[focus].position;
-            let cursor = self.windows[focus].cursor.offset(position);
+        let window = &self.windows[self.focus];
+        let cursor = window.position.offset(window.cursor);
 
-            let new_focus = match direction {
-                Direction::Up => {
-                    let range = 0..position.y;
-                    self.cursor_focus_beam(range.rev().map(|y| Position { x: cursor.x, y }))
-                }
-                Direction::Down => {
-                    let range = position.y..self.size.height;
-                    self.cursor_focus_beam(range.map(|y| Position { x: cursor.x, y }))
-                }
-                Direction::Left => {
-                    let range = 0..position.x;
-                    self.cursor_focus_beam(range.rev().map(|x| Position { x, y: cursor.y }))
-                }
-                Direction::Right => {
-                    let range = position.x + size.width..self.size.width;
-                    self.cursor_focus_beam(range.map(|x| Position { x, y: cursor.y }))
-                }
-            };
-
-            if new_focus.is_some() {
-                self.focus = new_focus;
+        let new_focus = match direction {
+            Direction::Up => {
+                let range = 0..window.position.y;
+                self.cursor_focus_beam(range.rev().map(|y| Position { x: cursor.x, y }))
             }
+            Direction::Down => {
+                let range = window.position.y..self.size.height;
+                self.cursor_focus_beam(range.map(|y| Position { x: cursor.x, y }))
+            }
+            Direction::Left => {
+                let range = 0..window.position.x;
+                self.cursor_focus_beam(range.rev().map(|x| Position { x, y: cursor.y }))
+            }
+            Direction::Right => {
+                let range = window.position.x + window.size.width..self.size.width;
+                self.cursor_focus_beam(range.map(|x| Position { x, y: cursor.y }))
+            }
+        };
+
+        if let Some(focus) = new_focus {
+            self.focus = focus;
         }
     }
 
     pub fn vertical_split_window(&mut self) {
-        if let Some(focus) = self.focus {
-            let above = &mut self.windows[focus];
-            above.size.width /= 2;
-            above.keep_cursor_within_bounds();
-            let mut below: Window = *above;
-            below.position.x += above.size.width;
-            self.windows.push(below);
-        }
+        let above = &mut self.windows[self.focus];
+        above.size.width /= 2;
+        above.keep_cursor_within_bounds();
+        let mut below: Window = *above;
+        below.position.x += above.size.width;
+        self.windows.push(below);
     }
 
     pub fn horizontal_split_window(&mut self) {
-        if let Some(focus) = self.focus {
-            let above = &mut self.windows[focus];
-            above.size.height /= 2;
-            above.keep_cursor_within_bounds();
-            let mut below: Window = *above;
-            below.position.y += above.size.height;
-            self.windows.push(below);
-        }
+        let above = &mut self.windows[self.focus];
+        above.size.height /= 2;
+        above.keep_cursor_within_bounds();
+        let mut below: Window = *above;
+        below.position.y += above.size.height;
+        self.windows.push(below);
     }
 }
