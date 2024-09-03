@@ -1,7 +1,5 @@
-#![allow(dead_code)]
-
-use crate::define_index;
 use crate::indexvec::IndexVec;
+use crate::settings;
 use crate::terminal::{Position, Size};
 use crate::text::PieceTable;
 use crate::util::Direction;
@@ -9,8 +7,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-define_index!(pub BufferID);
-define_index!(pub WindowID);
+crate::define_index!(pub BufferID);
+crate::define_index!(pub WindowID);
 
 pub type BufferVec = IndexVec<Buffer, BufferID>;
 pub type WindowVec = IndexVec<Window, WindowID>;
@@ -26,13 +24,16 @@ pub enum Mode {
     OperatorPending,
 }
 
-pub enum Buffer {
-    File {
-        text: PieceTable,
-        path: PathBuf,
-        time: SystemTime,
-    },
-    New(PieceTable),
+pub struct FileInfo {
+    pub path: PathBuf,
+    pub time: SystemTime,
+}
+
+#[derive(Default)]
+pub struct Buffer {
+    pub text: PieceTable,
+    pub file_info: Option<FileInfo>,
+    pub settings: settings::Buffer,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -48,6 +49,7 @@ pub struct Window {
     pub cursor: Position,
     pub size: Size,
     pub view: Option<View>,
+    pub settings: settings::Window,
 }
 
 pub struct Editor {
@@ -56,23 +58,20 @@ pub struct Editor {
     pub focus: WindowID,
     pub mode: Mode,
     pub size: Size,
+    pub settings: settings::Editor,
+}
+
+impl FileInfo {
+    pub fn new(path: PathBuf) -> std::io::Result<FileInfo> {
+        std::fs::metadata(&path)?.modified().map(|time| FileInfo { path, time })
+    }
 }
 
 impl Buffer {
-    pub fn new() -> Buffer {
-        Buffer::New(PieceTable::default())
-    }
-
     pub fn read(path: std::path::PathBuf) -> std::io::Result<Buffer> {
-        let time = std::fs::metadata(&path)?.modified()?;
-        let text = std::fs::read_to_string(&path);
-        text.map(PieceTable::from).map(|text| Buffer::File { text, path, time })
-    }
-
-    pub fn text(&self) -> Option<&PieceTable> {
-        match self {
-            Buffer::File { text, .. } | Buffer::New(text) => Some(text),
-        }
+        let text = std::fs::read_to_string(&path)?.into();
+        let file_info = Some(FileInfo::new(path)?);
+        Ok(Buffer { text, file_info, settings: settings::Buffer::default() })
     }
 }
 
@@ -101,6 +100,7 @@ impl Editor {
             cursor: Position::default(),
             size,
             view: None,
+            settings: settings::Window::default(),
         });
 
         Editor {
@@ -109,6 +109,7 @@ impl Editor {
             focus: default_window,
             mode: Mode::Normal,
             size,
+            settings: settings::Editor::default(),
         }
     }
 
@@ -143,7 +144,7 @@ impl Editor {
         self.focus = crate::indexvec::VecIndex::new(index - 1);
     }
 
-    fn cursor_focus_beam(&self, beam: impl Iterator<Item = Position>) -> Option<WindowID> {
+    fn run_cursor_focus_beam(&self, beam: impl Iterator<Item = Position>) -> Option<WindowID> {
         beam.flat_map(|position| {
             self.window_ids().filter(move |&window_id| {
                 window_id != self.focus && self.windows[window_id].contains(position)
@@ -152,32 +153,32 @@ impl Editor {
         .next()
     }
 
-    pub fn move_focus(&mut self, direction: Direction) {
+    fn send_cursor_focus_beam(&self, direction: Direction) -> Option<WindowID> {
         let window = &self.windows[self.focus];
         let cursor = window.position.offset(window.cursor);
 
-        let new_focus = match direction {
+        match direction {
             Direction::Up => {
                 let range = 0..window.position.y;
-                self.cursor_focus_beam(range.rev().map(|y| Position { x: cursor.x, y }))
+                self.run_cursor_focus_beam(range.rev().map(|y| Position { x: cursor.x, y }))
             }
             Direction::Down => {
                 let range = window.position.y..self.size.height;
-                self.cursor_focus_beam(range.map(|y| Position { x: cursor.x, y }))
+                self.run_cursor_focus_beam(range.map(|y| Position { x: cursor.x, y }))
             }
             Direction::Left => {
                 let range = 0..window.position.x;
-                self.cursor_focus_beam(range.rev().map(|x| Position { x, y: cursor.y }))
+                self.run_cursor_focus_beam(range.rev().map(|x| Position { x, y: cursor.y }))
             }
             Direction::Right => {
                 let range = window.position.x + window.size.width..self.size.width;
-                self.cursor_focus_beam(range.map(|x| Position { x, y: cursor.y }))
+                self.run_cursor_focus_beam(range.map(|x| Position { x, y: cursor.y }))
             }
-        };
-
-        if let Some(focus) = new_focus {
-            self.focus = focus;
         }
+    }
+
+    pub fn move_focus(&mut self, direction: Direction) {
+        self.send_cursor_focus_beam(direction).inspect(|&id| self.focus = id);
     }
 
     pub fn vertical_split_window(&mut self) {

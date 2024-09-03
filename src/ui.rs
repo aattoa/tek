@@ -16,12 +16,14 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
     terminal::queue(style::SetBackgroundColor(style::Color::DarkGrey))?;
     terminal::clear_line()?;
 
-    print!("-- {:?} --", ui.editor.mode);
+    if ui.editor.settings.showmode {
+        print!("-- {:?} -- ", ui.editor.mode);
+    }
     if let Some(string) = &ui.status {
-        print!(" {string}");
+        print!("{string} ");
     }
     let cursor = ui.editor.windows[ui.editor.focus].cursor;
-    print!(" {},{}", cursor.x + 1, cursor.y + 1);
+    print!("{},{} ", cursor.x + 1, cursor.y + 1);
 
     terminal::queue(style::SetBackgroundColor(style::Color::Reset))?;
     Ok(())
@@ -34,7 +36,7 @@ fn line_view(line: &str, view: editor::View) -> &str {
 }
 
 fn draw_view(ui: &UI, view: editor::View, position: Position) -> io::Result<()> {
-    let text: String = ui.editor.buffers[view.buffer].text().unwrap().gather();
+    let text: String = ui.editor.buffers[view.buffer].text.gather();
     let lines: Vec<&str> = text.lines().collect();
     let number_width = lines.len().to_string().len();
     for (index, &line) in lines.iter().enumerate() {
