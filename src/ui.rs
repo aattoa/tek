@@ -21,7 +21,7 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
     if let Some(string) = &ui.editor.status {
         print!("{string} ");
     }
-    let cursor = ui.editor.windows[ui.editor.focus].cursor;
+    let cursor = ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus].cursor;
     print!("{},{} ", cursor.x + 1, cursor.y + 1);
 
     terminal::queue(style::SetBackgroundColor(style::Color::Reset))
@@ -95,14 +95,15 @@ fn draw_window(ui: &UI, window: &editor::Window, focus: bool) -> io::Result<()> 
 }
 
 fn draw_windows(ui: &UI) -> io::Result<()> {
-    for id in ui.editor.window_ids() {
-        draw_window(ui, &ui.editor.windows[id], ui.editor.focus == id)?;
+    let window_focus = ui.editor.window_focus();
+    for &id in &ui.editor.tabs[ui.editor.tab_focus].open_windows {
+        draw_window(ui, &ui.editor.windows[id], window_focus == id)?;
     }
     draw_status_line(ui)
 }
 
 fn draw_cursor(ui: &UI) -> io::Result<()> {
-    let window = &ui.editor.windows[ui.editor.focus];
+    let window = &ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus];
     terminal::set_cursor(window.position.offset(window.cursor))?;
     terminal::queue(cursor::Show)
 }
