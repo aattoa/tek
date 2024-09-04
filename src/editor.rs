@@ -36,6 +36,7 @@ pub struct Buffer {
     pub text: PieceTable,
     pub file_info: Option<FileInfo>,
     pub settings: settings::BufferSettings,
+    pub windows: Vec<WindowID>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,6 +54,7 @@ pub struct Window {
     pub view: Option<View>,
     pub settings: settings::WindowSettings,
     pub is_open: bool,
+    pub redraw: bool,
 }
 
 pub struct Tab {
@@ -79,10 +81,12 @@ impl FileInfo {
 
 impl Buffer {
     pub fn read(path: std::path::PathBuf) -> std::io::Result<Buffer> {
-        let text = std::fs::read_to_string(&path)?.into();
-        let file_info = Some(FileInfo::new(path)?);
-        let settings = settings::BufferSettings::default();
-        Ok(Buffer { text, file_info, settings })
+        Ok(Buffer {
+            text: std::fs::read_to_string(&path)?.into(),
+            file_info: Some(FileInfo::new(path)?),
+            settings: settings::BufferSettings::default(),
+            windows: Vec::new(),
+        })
     }
 }
 
@@ -95,6 +99,7 @@ impl Window {
             view: None,
             settings: settings::WindowSettings::default(),
             is_open: false,
+            redraw: true,
         }
     }
     pub fn keep_cursor_within_bounds(&mut self) {
@@ -118,6 +123,7 @@ impl Editor {
         let default_window_id = windows.push(Window {
             size: Size { height: size.height - 1, ..size },
             is_open: true,
+            redraw: true,
             ..Window::default()
         });
         let mut tabs = TabVec::new();
@@ -155,13 +161,21 @@ impl Editor {
             .unwrap_or_else(|| self.windows.push(Window::default()))
     }
 
+    fn set_window_focus(&mut self, new_focus: WindowID) {
+        let tab = &mut self.tabs[self.tab_focus];
+        self.windows[tab.window_focus].redraw = true;
+        self.windows[new_focus].redraw = true;
+        tab.window_focus = new_focus;
+    }
+
     // TODO: check if already open
     pub fn edit(&mut self, path: PathBuf) -> io::Result<()> {
         let buffer = self.buffers.push(Buffer::read(path)?);
         let window = &mut self.windows[self.tabs[self.tab_focus].window_focus];
-        window.cursor = Position::default();
         let size = Size { width: window.size.width - 2, height: window.size.height - 2 };
         window.view = Some(View { offset: window.position.x + 1, size, buffer });
+        window.cursor = Position::default();
+        window.redraw = true;
         Ok(())
     }
 
@@ -174,13 +188,13 @@ impl Editor {
     pub fn rotate_focus_forward(&mut self) {
         let index = 1 + crate::indexvec::VecIndex::get(self.window_focus());
         let index = if index == self.windows.len() { 0 } else { index };
-        self.tabs[self.tab_focus].window_focus = crate::indexvec::VecIndex::new(index);
+        self.set_window_focus(crate::indexvec::VecIndex::new(index));
     }
 
     pub fn rotate_focus_backward(&mut self) {
         let index = crate::indexvec::VecIndex::get(self.window_focus());
         let index = if index == 0 { self.windows.len() } else { index };
-        self.tabs[self.tab_focus].window_focus = crate::indexvec::VecIndex::new(index - 1);
+        self.set_window_focus(crate::indexvec::VecIndex::new(index - 1));
     }
 
     fn run_cursor_focus_beam(&self, beam: impl Iterator<Item = Position>) -> Option<WindowID> {
@@ -220,8 +234,7 @@ impl Editor {
     }
 
     pub fn move_focus(&mut self, direction: Direction) {
-        self.send_cursor_focus_beam(direction)
-            .inspect(|&id| self.tabs[self.tab_focus].window_focus = id);
+        self.send_cursor_focus_beam(direction).inspect(|&id| self.set_window_focus(id));
     }
 
     pub fn vertical_split_window(&mut self) {
@@ -236,6 +249,7 @@ impl Editor {
         let mut right: Window = *left;
         right.size.width += remainder;
         right.position.x += left.size.width;
+        (left.redraw, right.redraw) = (true, true);
         self.tabs[self.tab_focus].open_windows.push(self.windows.push(right));
     }
 
@@ -251,6 +265,7 @@ impl Editor {
         let mut below: Window = *above;
         below.size.height += remainder;
         below.position.y += above.size.height;
+        (above.redraw, below.redraw) = (true, true);
         self.tabs[self.tab_focus].open_windows.push(self.windows.push(below));
     }
 }

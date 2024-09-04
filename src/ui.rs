@@ -100,10 +100,13 @@ fn draw_window(ui: &UI, window: &editor::Window, focus: bool) -> io::Result<()> 
     Ok(())
 }
 
-fn draw_windows(ui: &UI) -> io::Result<()> {
+fn draw_windows(ui: &mut UI) -> io::Result<()> {
     let window_focus = ui.editor.window_focus();
     for &id in &ui.editor.tabs[ui.editor.tab_focus].open_windows {
-        draw_window(ui, &ui.editor.windows[id], window_focus == id)?;
+        if ui.editor.windows[id].redraw {
+            draw_window(ui, &ui.editor.windows[id], window_focus == id)?;
+            ui.editor.windows[id].redraw = false;
+        }
     }
     draw_status_line(ui)
 }
@@ -126,9 +129,8 @@ fn compute_current_cursor(ui: &UI) -> Position {
     }
 }
 
-fn draw(ui: &UI) -> io::Result<()> {
+fn draw(ui: &mut UI) -> io::Result<()> {
     terminal::queue(cursor::Hide)?;
-    terminal::clear()?;
     draw_windows(ui)?;
     terminal::set_cursor(compute_current_cursor(ui))?;
     terminal::queue(cursor::Show)?;
@@ -139,6 +141,11 @@ fn execute_command_line(ui: &mut UI) -> io::Result<()> {
     let mut pieces = ui.command_line.split_whitespace();
     if let Some(command) = pieces.next() {
         match command {
+            "redraw" => {
+                for window in &mut ui.editor.windows.underlying {
+                    window.redraw = true;
+                }
+            }
             "e" | "edit" => {
                 if let Some(argument) = pieces.next() {
                     ui.editor.edit(argument.into())?;
@@ -200,7 +207,12 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
         editor::Mode::CommandLine => match key.code {
             KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
             KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-                ui.command_line.clear();
+                if ui.command_line.is_empty() {
+                    ui.editor.mode = editor::Mode::Normal;
+                }
+                else {
+                    ui.command_line.clear();
+                }
             }
             KeyCode::Char(character) => {
                 ui.command_line.push(character);
