@@ -2,47 +2,47 @@
 
 #[derive(Clone, Copy, Debug)]
 pub struct WindowBorders {
-    top_left: char,
-    top_right: char,
-    bottom_left: char,
-    bottom_right: char,
-    top_bar: char,
-    bottom_bar: char,
-    left_bar: char,
-    right_bar: char,
+    pub top_left: char,
+    pub top_right: char,
+    pub bottom_left: char,
+    pub bottom_right: char,
+    pub top_bar: char,
+    pub bottom_bar: char,
+    pub left_bar: char,
+    pub right_bar: char,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Editor {
-    pub showmode: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Buffer {
-    pub modifiable: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Window {
+pub struct WindowSettings {
     pub borders: WindowBorders,
     pub number: bool,
 }
 
-impl Default for Editor {
+#[derive(Clone, Copy, Debug)]
+pub struct EditorSettings {
+    pub showmode: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BufferSettings {
+    pub modifiable: bool,
+}
+
+impl Default for EditorSettings {
     fn default() -> Self {
-        Editor { showmode: true }
+        EditorSettings { showmode: true }
     }
 }
 
-impl Default for Buffer {
+impl Default for BufferSettings {
     fn default() -> Self {
-        Buffer { modifiable: false }
+        BufferSettings { modifiable: false }
     }
 }
 
-impl Default for Window {
+impl Default for WindowSettings {
     fn default() -> Self {
-        Window { borders: WindowBorders::unicode(), number: true }
+        WindowSettings { borders: WindowBorders::unicode(), number: true }
     }
 }
 

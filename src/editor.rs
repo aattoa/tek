@@ -33,7 +33,7 @@ pub struct FileInfo {
 pub struct Buffer {
     pub text: PieceTable,
     pub file_info: Option<FileInfo>,
-    pub settings: settings::Buffer,
+    pub settings: settings::BufferSettings,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -49,7 +49,7 @@ pub struct Window {
     pub cursor: Position,
     pub size: Size,
     pub view: Option<View>,
-    pub settings: settings::Window,
+    pub settings: settings::WindowSettings,
 }
 
 pub struct Editor {
@@ -58,7 +58,8 @@ pub struct Editor {
     pub focus: WindowID,
     pub mode: Mode,
     pub size: Size,
-    pub settings: settings::Editor,
+    pub settings: settings::EditorSettings,
+    pub status: Option<String>,
 }
 
 impl FileInfo {
@@ -71,7 +72,8 @@ impl Buffer {
     pub fn read(path: std::path::PathBuf) -> std::io::Result<Buffer> {
         let text = std::fs::read_to_string(&path)?.into();
         let file_info = Some(FileInfo::new(path)?);
-        Ok(Buffer { text, file_info, settings: settings::Buffer::default() })
+        let settings = settings::BufferSettings::default();
+        Ok(Buffer { text, file_info, settings })
     }
 }
 
@@ -92,15 +94,19 @@ impl Window {
 }
 
 impl Editor {
+    pub fn emit_message(&mut self, message: String) {
+        self.status = Some(message);
+    }
+
     pub fn new(size: Size) -> Editor {
         let mut windows = WindowVec::new();
 
         let default_window = windows.push(Window {
             position: Position::default(),
             cursor: Position::default(),
-            size,
+            size: Size { width: size.width, height: size.height - 1 },
             view: None,
-            settings: settings::Window::default(),
+            settings: settings::WindowSettings::default(),
         });
 
         Editor {
@@ -109,11 +115,12 @@ impl Editor {
             focus: default_window,
             mode: Mode::Normal,
             size,
-            settings: settings::Editor::default(),
+            settings: settings::EditorSettings::default(),
+            status: None,
         }
     }
 
-    fn window_ids(&self) -> impl Iterator<Item = WindowID> {
+    pub fn window_ids(&self) -> impl Iterator<Item = WindowID> {
         (0..self.windows.len()).map(crate::indexvec::VecIndex::new)
     }
 
@@ -122,7 +129,8 @@ impl Editor {
         let buffer = self.buffers.push(Buffer::read(path)?);
         let window = &mut self.windows[self.focus];
         window.cursor = Position::default();
-        window.view = Some(View { offset: window.position.x, size: window.size, buffer });
+        let size = Size { width: window.size.width - 2, height: window.size.height - 2 };
+        window.view = Some(View { offset: window.position.x + 1, size, buffer });
         Ok(())
     }
 
@@ -182,19 +190,31 @@ impl Editor {
     }
 
     pub fn vertical_split_window(&mut self) {
-        let above = &mut self.windows[self.focus];
-        above.size.width /= 2;
-        above.keep_cursor_within_bounds();
-        let mut below: Window = *above;
-        below.position.x += above.size.width;
-        self.windows.push(below);
+        let left = &mut self.windows[self.focus];
+        if left.size.width < 4 {
+            self.emit_message(String::from("The window is too small for a vertical split"));
+            return;
+        }
+        let remainder = left.size.width % 2;
+        left.size.width /= 2;
+        left.keep_cursor_within_bounds();
+        let mut right: Window = *left;
+        right.size.width += remainder;
+        right.position.x += left.size.width;
+        self.windows.push(right);
     }
 
     pub fn horizontal_split_window(&mut self) {
         let above = &mut self.windows[self.focus];
+        if above.size.height < 4 {
+            self.emit_message(String::from("The window is too small for a horizontal split"));
+            return;
+        }
+        let remainder = above.size.height % 2;
         above.size.height /= 2;
         above.keep_cursor_within_bounds();
         let mut below: Window = *above;
+        below.size.height += remainder;
         below.position.y += above.size.height;
         self.windows.push(below);
     }

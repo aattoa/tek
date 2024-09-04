@@ -62,8 +62,13 @@ impl Position {
             Direction::Right => Position { x: self.x.saturating_add(1), ..self },
         }
     }
-
+    pub fn offset_x(self, x: u16) -> Position {
+        Position { x: self.x + x, y: self.y }
+    }
+    pub fn offset_y(self, y: u16) -> Position {
+        Position { x: self.x, y: self.y + y }
+    }
     pub fn offset(self, other: Position) -> Position {
-        Position { x: self.x + other.x, y: self.y + other.y }
+        self.offset_x(other.x).offset_y(other.y)
     }
 }

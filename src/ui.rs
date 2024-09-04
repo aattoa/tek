@@ -7,7 +7,6 @@ use std::io;
 
 pub struct UI {
     editor: editor::Editor,
-    status: Option<String>,
     quit: bool,
 }
 
@@ -19,14 +18,13 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
     if ui.editor.settings.showmode {
         print!("-- {:?} -- ", ui.editor.mode);
     }
-    if let Some(string) = &ui.status {
+    if let Some(string) = &ui.editor.status {
         print!("{string} ");
     }
     let cursor = ui.editor.windows[ui.editor.focus].cursor;
     print!("{},{} ", cursor.x + 1, cursor.y + 1);
 
-    terminal::queue(style::SetBackgroundColor(style::Color::Reset))?;
-    Ok(())
+    terminal::queue(style::SetBackgroundColor(style::Color::Reset))
 }
 
 fn line_view(line: &str, view: editor::View) -> &str {
@@ -40,7 +38,7 @@ fn draw_view(ui: &UI, view: editor::View, position: Position) -> io::Result<()> 
     let lines: Vec<&str> = text.lines().collect();
     let number_width = lines.len().to_string().len();
     for (index, &line) in lines.iter().enumerate() {
-        terminal::set_cursor(Position { x: position.x, y: position.y + index as u16 })?;
+        terminal::set_cursor(position.offset_y(index as u16))?;
         terminal::queue(style::SetForegroundColor(style::Color::DarkGrey))?;
         terminal::queue(style::SetAttribute(style::Attribute::Bold))?;
         print!("{:number_width$}", index + 1);
@@ -51,21 +49,62 @@ fn draw_view(ui: &UI, view: editor::View, position: Position) -> io::Result<()> 
     Ok(())
 }
 
-fn draw_windows(ui: &UI) -> io::Result<()> {
-    for window in &ui.editor.windows.underlying {
-        if let Some(view) = window.view {
-            draw_view(ui, view, window.position)?;
-        }
+fn draw_horizontal_bar(left: char, right: char, middle: char, width: u16) -> io::Result<()> {
+    print!("{left}");
+    for _ in 0..width - 2 {
+        print!("{middle}");
     }
-    draw_status_line(ui)?;
+    print!("{right}");
     Ok(())
+}
+
+fn draw_window(ui: &UI, window: &editor::Window, focus: bool) -> io::Result<()> {
+    if !focus {
+        terminal::queue(style::SetForegroundColor(style::Color::DarkGrey))?;
+    }
+    terminal::set_cursor(window.position)?;
+    draw_horizontal_bar(
+        window.settings.borders.top_left,
+        window.settings.borders.top_right,
+        window.settings.borders.top_bar,
+        window.size.width,
+    )?;
+    terminal::set_cursor(window.position.offset_y(window.size.height - 1))?;
+    draw_horizontal_bar(
+        window.settings.borders.bottom_left,
+        window.settings.borders.bottom_right,
+        window.settings.borders.bottom_bar,
+        window.size.width,
+    )?;
+    for y in 1..window.size.height - 1 {
+        terminal::set_cursor(window.position.offset_y(y))?;
+        draw_horizontal_bar(
+            window.settings.borders.left_bar,
+            window.settings.borders.right_bar,
+            ' ',
+            window.size.width,
+        )?;
+    }
+    if !focus {
+        terminal::queue(style::SetForegroundColor(style::Color::Reset))?;
+    }
+    if let Some(view) = window.view {
+        draw_view(ui, view, window.position.offset_x(1).offset_y(1))?;
+    }
+    Ok(())
+}
+
+fn draw_windows(ui: &UI) -> io::Result<()> {
+    for id in ui.editor.window_ids() {
+        draw_window(ui, &ui.editor.windows[id], ui.editor.focus == id)?;
+    }
+    draw_status_line(ui)
 }
 
 fn draw_cursor(ui: &UI) -> io::Result<()> {
     let window = &ui.editor.windows[ui.editor.focus];
     terminal::set_cursor(window.position.offset(window.cursor))?;
-    terminal::queue(cursor::Show)?;
-    Ok(())
+    terminal::queue(cursor::Show)
 }
 
 fn draw(ui: &UI) -> io::Result<()> {
@@ -73,8 +112,7 @@ fn draw(ui: &UI) -> io::Result<()> {
     terminal::clear()?;
     draw_windows(ui)?;
     draw_cursor(ui)?;
-    terminal::flush()?;
-    Ok(())
+    terminal::flush()
 }
 
 fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
@@ -118,7 +156,7 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
         },
         editor::Mode::Insert => match key.code {
             KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
-            KeyCode::Char(character) => ui.status = Some(format!("got '{character}'")),
+            KeyCode::Char(character) => ui.editor.status = Some(format!("got '{character}'")),
             _ => {}
         },
         _ => {}
@@ -142,7 +180,7 @@ fn handle_event(ui: &mut UI, event: Event) -> io::Result<()> {
 
 impl UI {
     pub fn new(size: terminal::Size) -> UI {
-        UI { editor: editor::Editor::new(size), status: None, quit: false }
+        UI { editor: editor::Editor::new(size), quit: false }
     }
 
     pub fn run(&mut self) -> io::Result<()> {
