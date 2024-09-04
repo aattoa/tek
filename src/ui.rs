@@ -7,6 +7,7 @@ use std::io;
 
 pub struct UI {
     editor: editor::Editor,
+    command_line: String,
     quit: bool,
 }
 
@@ -15,11 +16,16 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
     terminal::queue(style::SetBackgroundColor(style::Color::DarkGrey))?;
     terminal::clear_line()?;
 
-    if ui.editor.settings.showmode {
-        print!("-- {:?} -- ", ui.editor.mode);
+    if ui.editor.mode == editor::Mode::CommandLine {
+        print!(":{} ", ui.command_line);
     }
-    if let Some(string) = &ui.editor.status {
-        print!("{string} ");
+    else {
+        if ui.editor.settings.showmode {
+            print!("-- {:?} -- ", ui.editor.mode);
+        }
+        if let Some(string) = &ui.editor.status {
+            print!("{string} ");
+        }
     }
     let cursor = ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus].cursor;
     print!("{},{} ", cursor.x + 1, cursor.y + 1);
@@ -102,18 +108,49 @@ fn draw_windows(ui: &UI) -> io::Result<()> {
     draw_status_line(ui)
 }
 
-fn draw_cursor(ui: &UI) -> io::Result<()> {
-    let window = &ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus];
-    terminal::set_cursor(window.position.offset(window.cursor))?;
-    terminal::queue(cursor::Show)
+fn compute_current_cursor(ui: &UI) -> Position {
+    if ui.editor.mode == editor::Mode::CommandLine {
+        Position {
+            x: ui
+                .command_line
+                .len()
+                .try_into()
+                .unwrap_or(ui.editor.size.width.saturating_sub(1))
+                .saturating_add(1),
+            y: ui.editor.size.height.saturating_sub(1),
+        }
+    }
+    else {
+        let window = &ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus];
+        window.position.offset(window.cursor)
+    }
 }
 
 fn draw(ui: &UI) -> io::Result<()> {
     terminal::queue(cursor::Hide)?;
     terminal::clear()?;
     draw_windows(ui)?;
-    draw_cursor(ui)?;
+    terminal::set_cursor(compute_current_cursor(ui))?;
+    terminal::queue(cursor::Show)?;
     terminal::flush()
+}
+
+fn execute_command_line(ui: &mut UI) -> io::Result<()> {
+    let mut pieces = ui.command_line.split_whitespace();
+    if let Some(command) = pieces.next() {
+        match command {
+            "e" | "edit" => {
+                if let Some(argument) = pieces.next() {
+                    ui.editor.edit(argument.into())?;
+                }
+            }
+            "q" | "quit" => ui.quit = true,
+            "sp" | "split" => ui.editor.horizontal_split_window(),
+            "vsp" | "vsplit" => ui.editor.vertical_split_window(),
+            _ => ui.editor.status = Some(format!("Unrecognized command: {command}")),
+        }
+    }
+    Ok(())
 }
 
 fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
@@ -135,7 +172,7 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
                 'k' => ui.editor.move_cursor(Direction::Up),
                 'l' => ui.editor.move_cursor(Direction::Right),
                 'i' => ui.editor.mode = editor::Mode::Insert,
-                'f' => ui.editor.edit("test.txt".into())?,
+                ':' => ui.editor.mode = editor::Mode::CommandLine,
                 _ => {}
             },
             _ => {}
@@ -160,6 +197,24 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
             KeyCode::Char(character) => ui.editor.status = Some(format!("got '{character}'")),
             _ => {}
         },
+        editor::Mode::CommandLine => match key.code {
+            KeyCode::Esc => ui.editor.mode = editor::Mode::Normal,
+            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+                ui.command_line.clear();
+            }
+            KeyCode::Char(character) => {
+                ui.command_line.push(character);
+            }
+            KeyCode::Backspace => {
+                ui.command_line.pop();
+            }
+            KeyCode::Enter => {
+                execute_command_line(ui)?;
+                ui.command_line.clear();
+                ui.editor.mode = editor::Mode::Normal;
+            }
+            _ => {}
+        },
         _ => {}
     }
 
@@ -181,7 +236,11 @@ fn handle_event(ui: &mut UI, event: Event) -> io::Result<()> {
 
 impl UI {
     pub fn new(size: terminal::Size) -> UI {
-        UI { editor: editor::Editor::new(size), quit: false }
+        UI {
+            editor: editor::Editor::new(size),
+            command_line: String::new(),
+            quit: false,
+        }
     }
 
     pub fn run(&mut self) -> io::Result<()> {

@@ -15,7 +15,7 @@ pub type BufferVec = IndexVec<Buffer, BufferID>;
 pub type WindowVec = IndexVec<Window, WindowID>;
 pub type TabVec = IndexVec<Tab, TabID>;
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
 pub enum Mode {
     #[default]
     Normal,
