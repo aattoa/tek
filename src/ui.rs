@@ -27,8 +27,9 @@ fn draw_status_line(ui: &UI) -> io::Result<()> {
             print!("{string} ");
         }
     }
-    let cursor = ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus].cursor;
-    print!("{},{} ", cursor.x + 1, cursor.y + 1);
+    print!("tab:{}/{} ", ui.editor.current_tab + 1, ui.editor.tabs.len());
+    let cursor = ui.editor.windows[ui.editor.window_focus()].cursor;
+    print!("cursor:{},{} ", cursor.x + 1, cursor.y + 1);
 
     terminal::queue(style::SetBackgroundColor(style::Color::Reset))
 }
@@ -102,7 +103,7 @@ fn draw_window(ui: &UI, window: &editor::Window, focus: bool) -> io::Result<()> 
 
 fn draw_windows(ui: &mut UI) -> io::Result<()> {
     let window_focus = ui.editor.window_focus();
-    for &id in &ui.editor.tabs[ui.editor.tab_focus].open_windows {
+    for &id in &ui.editor.tabs[ui.editor.current_tab].open_windows {
         if ui.editor.windows[id].redraw {
             draw_window(ui, &ui.editor.windows[id], window_focus == id)?;
             ui.editor.windows[id].redraw = false;
@@ -124,7 +125,7 @@ fn compute_current_cursor(ui: &UI) -> Position {
         }
     }
     else {
-        let window = &ui.editor.windows[ui.editor.tabs[ui.editor.tab_focus].window_focus];
+        let window = &ui.editor.windows[ui.editor.tabs[ui.editor.current_tab].window_focus];
         window.position.offset(window.cursor)
     }
 }
@@ -141,11 +142,6 @@ fn execute_command_line(ui: &mut UI) -> io::Result<()> {
     let mut pieces = ui.command_line.split_whitespace();
     if let Some(command) = pieces.next() {
         match command {
-            "redraw" => {
-                for window in &mut ui.editor.windows.underlying {
-                    window.redraw = true;
-                }
-            }
             "e" | "edit" => {
                 if let Some(argument) = pieces.next() {
                     ui.editor.edit(argument.into())?;
@@ -154,6 +150,11 @@ fn execute_command_line(ui: &mut UI) -> io::Result<()> {
             "q" | "quit" => ui.quit = true,
             "sp" | "split" => ui.editor.horizontal_split_window(),
             "vsp" | "vsplit" => ui.editor.vertical_split_window(),
+            "redraw" => ui.editor.force_redraw(),
+            "tabopen" => ui.editor.tab_open(),
+            "tabclose" => ui.editor.tab_close(),
+            "tabnext" => ui.editor.tab_next(),
+            "tabprev" | "tabprevious" => ui.editor.tab_previous(),
             _ => ui.editor.status = Some(format!("Unrecognized command: {command}")),
         }
     }
@@ -173,11 +174,19 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
             KeyCode::Char('w') if key.modifiers == KeyModifiers::CONTROL => {
                 ui.editor.mode = editor::Mode::Window;
             }
+            KeyCode::Char('q') if key.modifiers == KeyModifiers::CONTROL => {
+                ui.editor.tab_close();
+            }
+            KeyCode::Char('t') if key.modifiers == KeyModifiers::CONTROL => {
+                ui.editor.tab_open();
+            }
             KeyCode::Char(character) => match character {
                 'h' => ui.editor.move_cursor(Direction::Left),
                 'j' => ui.editor.move_cursor(Direction::Down),
                 'k' => ui.editor.move_cursor(Direction::Up),
                 'l' => ui.editor.move_cursor(Direction::Right),
+                'H' => ui.editor.tab_previous(),
+                'L' => ui.editor.tab_next(),
                 'i' => ui.editor.mode = editor::Mode::Insert,
                 ':' => ui.editor.mode = editor::Mode::CommandLine,
                 _ => {}
@@ -227,7 +236,6 @@ fn handle_key(ui: &mut UI, key: KeyEvent) -> io::Result<()> {
             }
             _ => {}
         },
-        _ => {}
     }
 
     Ok(())
